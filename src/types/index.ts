@@ -179,3 +179,34 @@ export interface UserPreferences {
   favorites: string[]; // list of template IDs
   recentlyUsed: string[]; // list of template IDs
 }
+
+export interface ApprovedDomain {
+  domain: string;
+  status: 'verified' | 'pending' | 'unverified';
+  isApproved: boolean;
+  region?: string;
+  dnsRecordsCount?: number;
+}
+
+export interface SenderConfig {
+  username: string;
+  domain: string;
+  displayName: string;
+  email: string;
+  updatedAt?: string;
+  isConfigured?: boolean;
+}
+
+export interface EmailActivityRecord {
+  id: string;
+  resendId?: string;
+  from: string;
+  to: string;
+  subject: string;
+  invoiceNumber?: string;
+  status: 'accepted' | 'sent' | 'failed';
+  statusDetails: string;
+  timestamp: string;
+  hasAttachment: boolean;
+  error?: string;
+}

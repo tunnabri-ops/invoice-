@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { EmailTemplateData, InvoiceData } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { EmailTemplateData, InvoiceData, SenderConfig } from '../../types';
 import { formatCurrency } from '../../data/sampleData';
 import {
   Monitor,
@@ -12,23 +12,48 @@ import {
   Sparkles,
   Edit3,
   ExternalLink,
+  ShieldCheck,
+  Settings,
+  History,
+  AlertCircle,
+  RefreshCw,
+  UserCheck,
+  X,
 } from 'lucide-react';
 
 interface EmailRendererProps {
   template: EmailTemplateData;
   invoice: InvoiceData;
   onUpdateTemplate?: (updated: EmailTemplateData) => void;
+  onOpenEmailSettings?: () => void;
+  onOpenActivityLog?: () => void;
 }
 
 export const EmailRenderer: React.FC<EmailRendererProps> = ({
   template,
   invoice,
   onUpdateTemplate,
+  onOpenEmailSettings,
+  onOpenActivityLog,
 }) => {
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [copiedHtml, setCopiedHtml] = useState(false);
-  const [testEmailSent, setTestEmailSent] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+
+  // Recipient state
+  const [recipientEmail, setRecipientEmail] = useState(invoice.client.email || '');
+
+  // Active server sender configuration
+  const [senderConfig, setSenderConfig] = useState<SenderConfig | null>(null);
+
+  // Sending status
+  const [isSending, setIsSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{
+    success: boolean;
+    status?: string;
+    message: string;
+    resendId?: string;
+  } | null>(null);
 
   // Editable local fields
   const [subject, setSubject] = useState(template.subject);
@@ -37,6 +62,34 @@ export const EmailRenderer: React.FC<EmailRendererProps> = ({
   const [ctaText, setCtaText] = useState(template.callToActionText);
   const [ctaUrl, setCtaUrl] = useState(template.callToActionUrl);
   const [hasAttachment, setHasAttachment] = useState(template.includePdfAttachment);
+
+  // Fetch current authorized sender
+  const fetchSender = async () => {
+    try {
+      const res = await fetch('/api/sender-settings');
+      const data = await res.json();
+      if (data.ok && data.sender) {
+        setSenderConfig(data.sender);
+      }
+    } catch (e) {
+      console.warn('Could not fetch sender settings', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchSender();
+  }, []);
+
+  useEffect(() => {
+    setRecipientEmail(invoice.client.email || '');
+    setSubject(template.subject);
+    setHeadline(template.headline);
+    setMessageBody(template.messageBody);
+    setCtaText(template.callToActionText);
+    setCtaUrl(template.callToActionUrl);
+    setHasAttachment(template.includePdfAttachment);
+    setSendResult(null);
+  }, [template, invoice]);
 
   const sym = invoice.customization.currencySymbol || '$';
   const curr = invoice.customization.currency || 'USD';
@@ -123,7 +176,7 @@ export const EmailRenderer: React.FC<EmailRendererProps> = ({
                         <tr>
                           <td width="28" valign="middle">📎</td>
                           <td style="font-size: 13px; font-weight: 600; color: #0f172a;">Invoice_${invoice.invoiceNumber}.pdf</td>
-                          <td align="right" style="font-size: 12px; color: #64748b;">PDF Attachment (128 KB)</td>
+                          <td align="right" style="font-size: 12px; color: #64748b;">PDF Attachment Included</td>
                         </tr>
                       </table>
                     </div>`
@@ -153,13 +206,179 @@ export const EmailRenderer: React.FC<EmailRendererProps> = ({
     setTimeout(() => setCopiedHtml(false), 2000);
   };
 
-  const handleSendTest = () => {
-    setTestEmailSent(true);
-    setTimeout(() => setTestEmailSent(false), 3500);
+  // Real Server-Side Send Call via Resend API
+  const handleSendEmail = async () => {
+    if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail.trim())) {
+      setSendResult({
+        success: false,
+        message: 'Please provide a valid recipient email address.',
+      });
+      return;
+    }
+
+    setIsSending(true);
+    setSendResult(null);
+
+    const emailHtml = generateInlineEmailHtml();
+
+    try {
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: recipientEmail.trim(),
+          subject: resolvedSubject,
+          html: emailHtml,
+          invoiceNumber: invoice.invoiceNumber,
+          senderUsername: senderConfig?.username,
+          senderDomain: senderConfig?.domain,
+          displayName: senderConfig?.displayName || invoice.business.name,
+          pdfAttachment: hasAttachment
+            ? {
+                filename: `Invoice_${invoice.invoiceNumber}.pdf`,
+                contentBase64: btoa(`Invoice Summary: ${invoice.invoiceNumber}\nAmount: ${amountDueFormatted}\nDue: ${invoice.dueDate}`),
+              }
+            : undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || data.statusDetails || 'Failed to dispatch email');
+      }
+
+      setSendResult({
+        success: true,
+        status: data.status,
+        message: data.duplicatePrevented
+          ? 'Notice: Duplicate send prevented. This email was already dispatched moments ago.'
+          : `Email successfully accepted by Resend delivery queue!`,
+        resendId: data.messageId,
+      });
+    } catch (err: any) {
+      setSendResult({
+        success: false,
+        message: err?.message || 'Server error sending email',
+      });
+    } finally {
+      setIsSending(false);
+    }
   };
+
+  const activeFromAddress = senderConfig
+    ? `${senderConfig.username}@${senderConfig.domain}`
+    : `${invoice.business.email}`;
+
+  const activeDisplayName = senderConfig?.displayName || invoice.business.name;
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Sender & Recipient Header Banner */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-slate-900 text-white rounded-lg">
+              <UserCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                Authorized Outbound Sender
+              </span>
+              <p className="text-xs font-bold text-slate-900 font-mono">
+                "{activeDisplayName}" &lt;{activeFromAddress}&gt;
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {onOpenEmailSettings && (
+              <button
+                onClick={onOpenEmailSettings}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                Change Sender Address
+              </button>
+            )}
+
+            {onOpenActivityLog && (
+              <button
+                onClick={onOpenActivityLog}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors"
+              >
+                <History className="w-3.5 h-3.5" />
+                Activity Log
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Recipient Target Field */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1 flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-600 shrink-0">Recipient:</span>
+            <input
+              type="email"
+              value={recipientEmail}
+              onChange={(e) => setRecipientEmail(e.target.value)}
+              placeholder="client@company.com"
+              className="flex-1 py-1.5 px-3 border border-slate-300 rounded-lg text-xs font-medium focus:ring-2 focus:ring-slate-900 focus:outline-none"
+            />
+          </div>
+
+          <button
+            onClick={handleSendEmail}
+            disabled={isSending || !recipientEmail}
+            className="flex items-center justify-center gap-1.5 px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors shrink-0"
+          >
+            {isSending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+            {isSending ? 'Sending via Resend...' : 'Send Invoice Email'}
+          </button>
+        </div>
+      </div>
+
+      {/* Actual Server API Result Banner */}
+      {sendResult && (
+        <div
+          className={`p-4 rounded-xl border flex items-start justify-between gap-3 text-xs animate-in fade-in slide-in-from-top duration-200 ${
+            sendResult.success
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-rose-50 border-rose-200 text-rose-900'
+          }`}
+        >
+          <div className="flex items-start gap-2.5">
+            {sendResult.success ? (
+              <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            )}
+            <div>
+              <p className="font-bold">{sendResult.message}</p>
+              {sendResult.resendId && (
+                <p className="text-[11px] font-mono text-emerald-700 mt-0.5">
+                  Resend Message ID: <strong>{sendResult.resendId}</strong> · Status: Accepted (Queued)
+                </p>
+              )}
+              {onOpenActivityLog && (
+                <button
+                  onClick={onOpenActivityLog}
+                  className="text-[11px] underline font-semibold mt-1 inline-block"
+                >
+                  View in Outbound Activity Log &rarr;
+                </button>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={() => setSendResult(null)}
+            className="text-slate-400 hover:text-slate-700 p-1"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Top Toolbar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2">
@@ -210,28 +429,10 @@ export const EmailRenderer: React.FC<EmailRendererProps> = ({
             {copiedHtml ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
             {copiedHtml ? 'Copied HTML!' : 'Copy Inline HTML'}
           </button>
-
-          <button
-            onClick={handleSendTest}
-            className="flex items-center gap-1.5 px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium shadow-xs transition-colors"
-          >
-            <Send className="w-3.5 h-3.5" />
-            Send Test Email
-          </button>
         </div>
       </div>
 
-      {testEmailSent && (
-        <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl text-xs text-emerald-800 flex items-center justify-between animate-in fade-in slide-in-from-top duration-200">
-          <div className="flex items-center gap-2">
-            <Check className="w-4 h-4 text-emerald-600" />
-            <span>Test email dispatched to <strong>{invoice.client.email}</strong> with full HTML rendering and attachment simulated!</span>
-          </div>
-          <span className="font-mono text-[10px] text-emerald-600">SMTP: OK (200)</span>
-        </div>
-      )}
-
-      {/* Optional Editor Drawer */}
+      {/* Editor Drawer */}
       {isEditing && (
         <div className="bg-white p-5 rounded-xl border border-indigo-200 shadow-sm space-y-4 text-xs animate-in fade-in duration-200">
           <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -318,12 +519,14 @@ export const EmailRenderer: React.FC<EmailRendererProps> = ({
           {/* Simulated Email Client Header */}
           <div className="bg-slate-100 border-b border-slate-200 p-4 text-xs space-y-1.5">
             <div className="flex justify-between items-center text-slate-400 text-[11px]">
-              <span>To: {invoice.client.name} &lt;{invoice.client.email}&gt;</span>
-              <span>Today at 9:42 AM</span>
+              <span>To: {invoice.client.name} &lt;{recipientEmail || invoice.client.email}&gt;</span>
+              <span>Today at {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-slate-400">From:</span>
-              <span className="font-semibold text-slate-800">{invoice.business.name} &lt;{invoice.business.email}&gt;</span>
+              <span className="font-semibold text-slate-800">
+                "{activeDisplayName}" &lt;{activeFromAddress}&gt;
+              </span>
             </div>
             <div className="flex items-baseline gap-2 pt-1 border-t border-slate-200/60">
               <span className="text-slate-400 font-medium">Subject:</span>
@@ -394,10 +597,10 @@ export const EmailRenderer: React.FC<EmailRendererProps> = ({
                     <Paperclip className="w-4 h-4 text-slate-400" />
                     <div>
                       <span className="font-semibold text-slate-800">Invoice_{invoice.invoiceNumber}.pdf</span>
-                      <p className="text-[11px] text-slate-400">PDF Document · 128 KB</p>
+                      <p className="text-[11px] text-slate-400">PDF Document Attached</p>
                     </div>
                   </div>
-                  <span className="text-[11px] font-medium text-indigo-600">Download</span>
+                  <span className="text-[11px] font-medium text-indigo-600">Attached</span>
                 </div>
               )}
 
@@ -412,7 +615,7 @@ export const EmailRenderer: React.FC<EmailRendererProps> = ({
               <p>© {new Date().getFullYear()} {invoice.business.name}. All rights reserved.</p>
               <p>{invoice.business.address}, {invoice.business.city} · {invoice.business.website}</p>
               <p className="text-[10px] text-slate-400 pt-1">
-                You are receiving this communication regarding your active account with {invoice.business.name}.
+                Dispatched via authorized sender &lt;{activeFromAddress}&gt; through InvoiceCraft Resend integration.
               </p>
             </div>
           </div>

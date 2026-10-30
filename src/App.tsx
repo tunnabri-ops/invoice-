@@ -6,6 +6,7 @@ import {
   PaymentRecord,
   UserPreferences,
   EmailTemplateData,
+  SenderConfig,
 } from './types';
 import {
   INVOICE_TEMPLATES,
@@ -29,6 +30,8 @@ import { CustomizationPanel } from './components/editor/CustomizationPanel';
 import { UserPreferencesModal } from './components/preferences/UserPreferencesModal';
 import { RecordPaymentModal } from './components/payments/RecordPaymentModal';
 import { PreviewModal } from './components/gallery/PreviewModal';
+import { EmailSettingsModal } from './components/settings/EmailSettingsModal';
+import { EmailActivityModal } from './components/emails/EmailActivityModal';
 import {
   FileText,
   Receipt,
@@ -46,6 +49,8 @@ import {
   RefreshCw,
   Eye,
   LayoutGrid,
+  History,
+  Send,
 } from 'lucide-react';
 
 export default function App() {
@@ -102,6 +107,8 @@ export default function App() {
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
   const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
   const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null);
+  const [isEmailSettingsOpen, setIsEmailSettingsOpen] = useState(false);
+  const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
 
   // Sync to localStorage
   useEffect(() => {
@@ -130,7 +137,6 @@ export default function App() {
 
   // Handle template selection
   const handleSelectTemplate = (templateId: string) => {
-    // Add to recently used
     const updatedRecents = [templateId, ...preferences.recentlyUsed.filter((id) => id !== templateId)].slice(0, 8);
     setPreferences({ ...preferences, recentlyUsed: updatedRecents });
 
@@ -161,7 +167,6 @@ export default function App() {
 
   const handleRecordPayment = (newRecord: PaymentRecord) => {
     setPaymentRecords([newRecord, ...paymentRecords]);
-    // Update invoice status and paid amount
     const newPaidAmount = (invoice.paidAmount || 0) + newRecord.amountPaid;
     const totals = invoice.items.reduce((sum, item) => sum + item.rate * item.quantity, 0);
     const isFullyPaid = newPaidAmount >= totals;
@@ -175,7 +180,6 @@ export default function App() {
     }));
   };
 
-  // Convert Quotation into an Invoice
   const handleConvertQuoteToInvoice = (quote: QuotationData) => {
     const newInvoice: InvoiceData = {
       id: `inv_from_${quote.id}`,
@@ -215,7 +219,6 @@ export default function App() {
 
   const latestPaymentRecord = paymentRecords.find((r) => r.invoiceId === invoice.id) || paymentRecords[0];
 
-  // Current active template ID
   const getCurrentTemplateId = () => {
     if (activeDocType === 'invoice') return invoice.templateId || 'classic-business';
     if (activeDocType === 'receipt') return latestPaymentRecord?.templateId || preferences.defaultReceiptTemplate;
@@ -223,7 +226,6 @@ export default function App() {
     return selectedEmailTemplateId;
   };
 
-  // Current template metadata
   const currentTemplateList =
     activeDocType === 'invoice'
       ? INVOICE_TEMPLATES
@@ -238,7 +240,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans selection:bg-slate-900 selection:text-white">
-      {/* 1. TOP BAR CONTRACT (§2) */}
+      {/* 1. TOP BAR CONTRACT */}
       <header className="no-print bg-white border-b border-slate-200 sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between gap-8">
         {/* Zone 1: Brand Wordmark */}
         <div className="flex items-center gap-3 shrink-0">
@@ -309,8 +311,17 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Zone 3: Primary Action */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        {/* Zone 3: Primary Action & Settings */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setIsEmailSettingsOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200"
+            title="Configure Resend custom sender email address"
+          >
+            <Mail className="w-3.5 h-3.5 text-slate-600" />
+            <span className="hidden sm:inline">Sender Email</span>
+          </button>
+
           <button
             onClick={() => setIsPreferencesOpen(true)}
             className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
@@ -369,13 +380,27 @@ export default function App() {
         {/* Right: Contextual Shortcuts */}
         <div className="flex items-center gap-2">
           {activeDocType === 'invoice' && (
-            <button
-              onClick={() => setIsRecordPaymentOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-medium transition-colors"
-            >
-              <CreditCard className="w-3.5 h-3.5" />
-              Record Payment ({invoice.status === 'paid' ? 'Paid in Full' : 'Issue Receipt'})
-            </button>
+            <>
+              <button
+                onClick={() => {
+                  setActiveDocType('email');
+                  setWorkspaceView('editor');
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-medium transition-colors"
+                title="Send invoice to client via Resend"
+              >
+                <Send className="w-3.5 h-3.5" />
+                Email Invoice
+              </button>
+
+              <button
+                onClick={() => setIsRecordPaymentOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-medium transition-colors"
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                Record Payment ({invoice.status === 'paid' ? 'Paid' : 'Issue Receipt'})
+              </button>
+            </>
           )}
 
           {activeDocType === 'quotation' && (
@@ -388,13 +413,22 @@ export default function App() {
             </button>
           )}
 
+          <button
+            onClick={() => setIsActivityLogOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors"
+            title="View email dispatch log"
+          >
+            <History className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Activity</span>
+          </button>
+
           {activeDocType === 'invoice' && (
             <button
               onClick={() => setIsComparisonOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors"
             >
               <Columns3 className="w-3.5 h-3.5" />
-              Compare Designs
+              Compare
             </button>
           )}
         </div>
@@ -451,7 +485,7 @@ export default function App() {
         {/* MODE B: EDITOR & LIVE RENDERER */}
         {workspaceView === 'editor' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* Left: Customization Drawer / Line Item Editor (hidden in email view or printing) */}
+            {/* Left: Customization Drawer / Line Item Editor */}
             {activeDocType !== 'email' && (
               <div className="no-print lg:col-span-4 sticky top-28">
                 <CustomizationPanel invoice={invoice} onChange={setInvoice} />
@@ -489,6 +523,8 @@ export default function App() {
                 <EmailRenderer
                   template={selectedEmail}
                   invoice={invoice}
+                  onOpenEmailSettings={() => setIsEmailSettingsOpen(true)}
+                  onOpenActivityLog={() => setIsActivityLogOpen(true)}
                 />
               )}
             </div>
@@ -539,6 +575,18 @@ export default function App() {
           onPrint={handlePrint}
         />
       )}
+
+      {/* Custom Sender Email Settings Modal */}
+      <EmailSettingsModal
+        isOpen={isEmailSettingsOpen}
+        onClose={() => setIsEmailSettingsOpen(false)}
+      />
+
+      {/* Outbound Email Activity Log Modal */}
+      <EmailActivityModal
+        isOpen={isActivityLogOpen}
+        onClose={() => setIsActivityLogOpen(false)}
+      />
     </div>
   );
 }
