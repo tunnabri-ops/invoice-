@@ -1,13 +1,28 @@
-import { getSenderSettings, saveSenderSettings } from '../server/emailService';
+import { getSenderSettings, saveSenderSettings } from './_emailService';
 
 export default async function handler(req: any, res: any) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method === 'GET') {
     const sender = getSenderSettings();
     return res.status(200).json({ ok: true, sender });
   }
 
   if (req.method === 'POST') {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    let body = req.body;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch (_) {
+        body = {};
+      }
+    }
     const { username, domain, displayName } = body || {};
 
     const result = await saveSenderSettings(username, domain, displayName);
@@ -26,6 +41,6 @@ export default async function handler(req: any, res: any) {
     });
   }
 
-  res.setHeader('Allow', ['GET', 'POST']);
+  res.setHeader('Allow', ['GET', 'POST', 'OPTIONS']);
   return res.status(405).json({ ok: false, error: 'Method Not Allowed' });
 }

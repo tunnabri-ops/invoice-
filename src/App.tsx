@@ -560,10 +560,10 @@ export default function App() {
                       <button
                         onClick={() => setIsSendInvoiceEmailOpen(true)}
                         className="px-3.5 py-1.5 bg-indigo-500 hover:bg-indigo-400 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
-                        title="Send invoice directly to your Gmail (sifurrahman37@gmail.com)"
+                        title="Send invoice via email"
                       >
-                        <Send className="w-3.5 h-3.5 text-white" />
-                        Send to My Gmail
+                        <Mail className="w-3.5 h-3.5 text-white" />
+                        Send Email
                       </button>
 
                       <button
@@ -674,13 +674,12 @@ export default function App() {
         onSave={(updated) => setInvoice(updated)}
       />
 
-      {/* 1-Click Send to Gmail Modal */}
+      {/* Send Invoice Email Modal */}
       <SendInvoiceEmailModal
         invoice={invoice}
         isOpen={isSendInvoiceEmailOpen}
         onClose={() => setIsSendInvoiceEmailOpen(false)}
         onOpenActivityLog={() => setIsActivityLogOpen(true)}
-        userEmail="sifurrahman37@gmail.com"
       />
     </div>
   );
