@@ -1,0 +1,6 @@
+{
+  "name": "InvoiceCraft — Invoice & Template Design Platform",
+  "description": "Complete professional template library for invoices, receipts, quotations, and emails with visual design selectors, live customization, and high-quality PDF generation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
