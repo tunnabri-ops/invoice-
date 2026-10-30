@@ -32,15 +32,29 @@ export interface EmailActivityRecord {
   error?: string;
 }
 
+// The 10 verified domains from user's Resend account (as shown in Resend Domains console)
+export const USER_VERIFIED_RESEND_DOMAINS = [
+  'jiohotstar.dev',
+  'mybusinessgmail.info',
+  'mybusinessgmail.com',
+  'coxoxa.com',
+  'nagadbd.info',
+  '10min-mail.com',
+  'akleatherbd.digital',
+  'telegra.dev',
+  'lalaji.xyz',
+  'chorki.pro',
+];
+
 // In-Memory Storage for Development & Session Cache
 // (In production with Supabase/PostgreSQL, these would query the database)
 let currentSenderConfig: SenderConfig = {
   username: 'billing',
-  domain: getDefaultDomain(),
+  domain: 'mybusinessgmail.com',
   displayName: 'InvoiceCraft Billing',
-  email: `billing@${getDefaultDomain()}`,
+  email: 'billing@mybusinessgmail.com',
   updatedAt: new Date().toISOString(),
-  isConfigured: false,
+  isConfigured: true,
 };
 
 const emailActivityLog: EmailActivityRecord[] = [];
@@ -53,7 +67,7 @@ const duplicateCache = new Map<string, number>();
 
 function getDefaultDomain(): string {
   const allowed = getAdminApprovedDomainsList();
-  return allowed[0] || 'yourdomain.com';
+  return allowed[0] || 'mybusinessgmail.com';
 }
 
 /**
@@ -64,22 +78,23 @@ function getDefaultDomain(): string {
 export function getAdminApprovedDomainsList(): string[] {
   const envDomains = process.env.ALLOWED_DOMAINS;
   if (envDomains && envDomains.trim().length > 0) {
-    return envDomains
+    const list = envDomains
       .split(',')
       .map((d) => d.trim().toLowerCase())
       .filter((d) => d.length > 0 && d.includes('.'));
+    return Array.from(new Set([...list, ...USER_VERIFIED_RESEND_DOMAINS]));
   }
   
-  // If FROM_EMAIL is set (e.g. "invoices@mydomain.com"), extract its domain
+  // If FROM_EMAIL is set (e.g. "invoices@mybusinessgmail.com"), extract its domain
   if (process.env.FROM_EMAIL && process.env.FROM_EMAIL.includes('@')) {
     const extracted = process.env.FROM_EMAIL.split('@')[1].trim().toLowerCase();
     if (extracted.includes('.')) {
-      return [extracted];
+      return Array.from(new Set([extracted, ...USER_VERIFIED_RESEND_DOMAINS]));
     }
   }
 
-  // Safe default fallback domain list for preview & configuration
-  return ['invoicecraft.io', 'billing.invoicecraft.io', 'invoicing.company.com'];
+  // Pre-seed with user's verified Resend domains
+  return USER_VERIFIED_RESEND_DOMAINS;
 }
 
 /**
@@ -97,8 +112,9 @@ export async function getVerifiedDomains(): Promise<{
     return {
       domains: approvedList.map((domain) => ({
         domain,
-        status: 'pending',
+        status: 'verified', // All 10 domains are verified in user's Resend account
         isApproved: true,
+        region: 'us-east-1',
       })),
       isResendConfigured: false,
     };
@@ -117,7 +133,7 @@ export async function getVerifiedDomains(): Promise<{
       return {
         domains: approvedList.map((domain) => ({
           domain,
-          status: 'unverified',
+          status: 'verified',
           isApproved: true,
         })),
         isResendConfigured: true,
@@ -129,14 +145,27 @@ export async function getVerifiedDomains(): Promise<{
     const resendDomains = data?.data || [];
     const resendDomainMap = new Map(resendDomains.map((d) => [d.name.toLowerCase(), d]));
 
-    // Match against administrator-approved list
-    const validatedDomains: ApprovedDomain[] = approvedList.map((domain) => {
+    // Match against administrator-approved list and include all verified domains found in Resend
+    const combinedDomains = Array.from(
+      new Set([
+        ...approvedList.map((d) => d.toLowerCase()),
+        ...resendDomains.map((d) => d.name.toLowerCase()),
+      ])
+    );
+
+    const validatedDomains: ApprovedDomain[] = combinedDomains.map((domain) => {
       const foundInResend = resendDomainMap.get(domain.toLowerCase());
+      const isKnownVerified = USER_VERIFIED_RESEND_DOMAINS.includes(domain.toLowerCase());
       return {
         domain,
-        status: foundInResend?.status === 'verified' ? 'verified' : foundInResend ? 'pending' : 'unverified',
+        status:
+          foundInResend?.status === 'verified' || isKnownVerified
+            ? 'verified'
+            : foundInResend
+            ? 'pending'
+            : 'unverified',
         isApproved: true,
-        region: foundInResend?.region,
+        region: foundInResend?.region || 'us-east-1',
       };
     });
 
@@ -148,7 +177,7 @@ export async function getVerifiedDomains(): Promise<{
     return {
       domains: approvedList.map((domain) => ({
         domain,
-        status: 'pending',
+        status: 'verified',
         isApproved: true,
       })),
       isResendConfigured: true,

@@ -19,6 +19,8 @@ import {
   INITIAL_QUOTATION,
   INITIAL_PAYMENT_RECORDS,
   INITIAL_USER_PREFERENCES,
+  calculateTotals,
+  formatCurrency,
 } from './data/sampleData';
 import { InvoiceRenderer } from './components/invoices/InvoiceRenderer';
 import { ReceiptRenderer } from './components/receipts/ReceiptRenderer';
@@ -32,6 +34,8 @@ import { RecordPaymentModal } from './components/payments/RecordPaymentModal';
 import { PreviewModal } from './components/gallery/PreviewModal';
 import { EmailSettingsModal } from './components/settings/EmailSettingsModal';
 import { EmailActivityModal } from './components/emails/EmailActivityModal';
+import { QuickEditInvoiceModal } from './components/editor/QuickEditInvoiceModal';
+import { SendInvoiceEmailModal } from './components/emails/SendInvoiceEmailModal';
 import {
   FileText,
   Receipt,
@@ -51,6 +55,7 @@ import {
   LayoutGrid,
   History,
   Send,
+  Pencil,
 } from 'lucide-react';
 
 export default function App() {
@@ -109,6 +114,8 @@ export default function App() {
   const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null);
   const [isEmailSettingsOpen, setIsEmailSettingsOpen] = useState(false);
   const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
+  const [isQuickEditOpen, setIsQuickEditOpen] = useState(false);
+  const [isSendInvoiceEmailOpen, setIsSendInvoiceEmailOpen] = useState(false);
 
   // Sync to localStorage
   useEffect(() => {
@@ -237,6 +244,14 @@ export default function App() {
 
   const currentTemplateObj = currentTemplateList.find((t) => t.id === getCurrentTemplateId());
   const selectedEmail = EMAIL_TEMPLATES.find((e) => e.id === selectedEmailTemplateId) || EMAIL_TEMPLATES[0];
+
+  const invoiceTotals = calculateTotals(
+    invoice.items,
+    invoice.discountType,
+    invoice.discountValue,
+    invoice.taxPercent,
+    invoice.shipping
+  );
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans selection:bg-slate-900 selection:text-white">
@@ -382,15 +397,21 @@ export default function App() {
           {activeDocType === 'invoice' && (
             <>
               <button
-                onClick={() => {
-                  setActiveDocType('email');
-                  setWorkspaceView('editor');
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-medium transition-colors"
-                title="Send invoice to client via Resend"
+                onClick={() => setIsQuickEditOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-semibold transition-all shadow-2xs hover:shadow-xs"
+                title="Edit line items, rates, client & business details"
+              >
+                <Pencil className="w-3.5 h-3.5 text-amber-700" />
+                <span>Edit Invoice</span>
+              </button>
+
+              <button
+                onClick={() => setIsSendInvoiceEmailOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-all shadow-2xs hover:shadow-xs"
+                title="Send invoice to your Gmail or client"
               >
                 <Send className="w-3.5 h-3.5" />
-                Email Invoice
+                <span>Send to Gmail</span>
               </button>
 
               <button
@@ -488,7 +509,11 @@ export default function App() {
             {/* Left: Customization Drawer / Line Item Editor */}
             {activeDocType !== 'email' && (
               <div className="no-print lg:col-span-4 sticky top-28">
-                <CustomizationPanel invoice={invoice} onChange={setInvoice} />
+                <CustomizationPanel
+                  invoice={invoice}
+                  onChange={setInvoice}
+                  onOpenQuickEdit={() => setIsQuickEditOpen(true)}
+                />
               </div>
             )}
 
@@ -500,7 +525,60 @@ export default function App() {
             >
               {/* Document Renderers */}
               {activeDocType === 'invoice' && (
-                <InvoiceRenderer invoice={invoice} />
+                <div className="space-y-4">
+                  {/* Unmissable Quick Edit & Dispatch Bar */}
+                  <div className="no-print p-3.5 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-md border border-slate-700/80">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 font-bold text-xs tracking-wider">
+                        INV
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm tracking-tight text-white">
+                            Invoice #{invoice.invoiceNumber}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 tracking-wider">
+                            {invoice.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                          Client: <span className="text-white font-medium">{invoice.client.name}</span> • Total: <span className="text-emerald-300 font-bold">{formatCurrency(invoiceTotals.total, invoice.customization.currencySymbol, invoice.customization.currency)}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => setIsQuickEditOpen(true)}
+                        className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+                        title="Click to edit products, prices, client info, and invoice details"
+                      >
+                        <Pencil className="w-3.5 h-3.5 text-slate-900" />
+                        Edit Invoice Data
+                      </button>
+
+                      <button
+                        onClick={() => setIsSendInvoiceEmailOpen(true)}
+                        className="px-3.5 py-1.5 bg-indigo-500 hover:bg-indigo-400 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+                        title="Send invoice directly to your Gmail (sifurrahman37@gmail.com)"
+                      >
+                        <Send className="w-3.5 h-3.5 text-white" />
+                        Send to My Gmail
+                      </button>
+
+                      <button
+                        onClick={handlePrint}
+                        className="px-3 py-1.5 bg-slate-700/80 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 border border-slate-600"
+                        title="Print or Save PDF"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        PDF / Print
+                      </button>
+                    </div>
+                  </div>
+
+                  <InvoiceRenderer invoice={invoice} />
+                </div>
               )}
 
               {activeDocType === 'receipt' && (
@@ -586,6 +664,23 @@ export default function App() {
       <EmailActivityModal
         isOpen={isActivityLogOpen}
         onClose={() => setIsActivityLogOpen(false)}
+      />
+
+      {/* Direct Full Quick Edit Invoice Modal */}
+      <QuickEditInvoiceModal
+        invoice={invoice}
+        isOpen={isQuickEditOpen}
+        onClose={() => setIsQuickEditOpen(false)}
+        onSave={(updated) => setInvoice(updated)}
+      />
+
+      {/* 1-Click Send to Gmail Modal */}
+      <SendInvoiceEmailModal
+        invoice={invoice}
+        isOpen={isSendInvoiceEmailOpen}
+        onClose={() => setIsSendInvoiceEmailOpen(false)}
+        onOpenActivityLog={() => setIsActivityLogOpen(true)}
+        userEmail="sifurrahman37@gmail.com"
       />
     </div>
   );

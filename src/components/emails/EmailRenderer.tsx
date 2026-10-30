@@ -20,6 +20,7 @@ import {
   UserCheck,
   X,
 } from 'lucide-react';
+import { safeBase64Encode } from '../../utils/base64';
 
 interface EmailRendererProps {
   template: EmailTemplateData;
@@ -236,7 +237,7 @@ export const EmailRenderer: React.FC<EmailRendererProps> = ({
           pdfAttachment: hasAttachment
             ? {
                 filename: `Invoice_${invoice.invoiceNumber}.pdf`,
-                contentBase64: btoa(`Invoice Summary: ${invoice.invoiceNumber}\nAmount: ${amountDueFormatted}\nDue: ${invoice.dueDate}`),
+                contentBase64: safeBase64Encode(`Invoice Summary: ${invoice.invoiceNumber}\nAmount: ${amountDueFormatted}\nDue: ${invoice.dueDate}`),
               }
             : undefined,
         }),
@@ -316,13 +317,23 @@ export const EmailRenderer: React.FC<EmailRendererProps> = ({
 
         {/* Recipient Target Field */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex-1 flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-600 shrink-0">Recipient:</span>
+          <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-semibold text-slate-600">Recipient:</span>
+              <button
+                type="button"
+                onClick={() => setRecipientEmail('sifurrahman37@gmail.com')}
+                className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded font-semibold text-[10px] transition-colors"
+                title="Fill with my Gmail address"
+              >
+                ⚡ Send to My Gmail
+              </button>
+            </div>
             <input
               type="email"
               value={recipientEmail}
               onChange={(e) => setRecipientEmail(e.target.value)}
-              placeholder="client@company.com"
+              placeholder="sifurrahman37@gmail.com or client@company.com"
               className="flex-1 py-1.5 px-3 border border-slate-300 rounded-lg text-xs font-medium focus:ring-2 focus:ring-slate-900 focus:outline-none"
             />
           </div>

@@ -19,6 +19,7 @@ import {
 interface CustomizationPanelProps {
   invoice: InvoiceData;
   onChange: (updated: InvoiceData) => void;
+  onOpenQuickEdit?: () => void;
 }
 
 const COLOR_PRESETS = [
@@ -46,6 +47,7 @@ const FONT_OPTIONS = [
 export const CustomizationPanel: React.FC<CustomizationPanelProps> = ({
   invoice,
   onChange,
+  onOpenQuickEdit,
 }) => {
   const [activeTab, setActiveTab] = useState<'branding' | 'items' | 'parties' | 'payment'>('branding');
 
@@ -127,6 +129,18 @@ export const CustomizationPanel: React.FC<CustomizationPanelProps> = ({
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full text-xs">
+      {onOpenQuickEdit && (
+        <div className="p-2.5 bg-gradient-to-r from-amber-50 to-indigo-50 border-b border-slate-200 flex items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold text-slate-700">Quickly edit all lines & prices:</span>
+          <button
+            onClick={onOpenQuickEdit}
+            className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-md text-[11px] transition-all shadow-2xs hover:shadow-xs active:scale-95 flex items-center gap-1 cursor-pointer"
+          >
+            ✏️ Full Editor Modal
+          </button>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex border-b border-slate-200 bg-slate-50/80 p-1">
         <button
