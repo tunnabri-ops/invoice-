@@ -1,14 +1,94 @@
 import { sendEmail } from './_emailService';
 
-export default async function handler(req: any, res: any) {
-  // CORS Headers for Vercel
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
-  );
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Credentials': 'true',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET,OPTIONS,PATCH,DELETE,POST,PUT',
+  'Access-Control-Allow-Headers':
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization',
+};
+
+async function processSendRequest(body: any, clientIp: string) {
+  return await sendEmail({
+    ...body,
+    clientIp,
+  });
+}
+
+// 1. Web Standard Handler (Edge / Next.js / Modern Vercel Functions)
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 200,
+    headers: CORS_HEADERS,
+  });
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const clientIp =
+      request.headers.get('x-forwarded-for') ||
+      request.headers.get('x-real-ip') ||
+      'client';
+
+    const result = await processSendRequest(body, clientIp);
+
+    if (!result.success && !result.duplicatePrevented) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: result.error,
+          status: result.status,
+          statusDetails: result.statusDetails,
+        }),
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+        }
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        messageId: result.messageId,
+        status: result.status,
+        statusDetails: result.statusDetails,
+        from: result.from,
+        to: result.to,
+        duplicatePrevented: result.duplicatePrevented,
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+      }
+    );
+  } catch (err: any) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: err?.message || 'Server error processing email request',
+      }),
+      {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+      }
+    );
+  }
+}
+
+// 2. Node.js Standard Handler (Classic Vercel / Express / Serverless Node)
+export default async function handler(req: any, res?: any) {
+  // If invoked with Web standard Request without res
+  if (!res || typeof res.setHeader !== 'function') {
+    if (req.method === 'OPTIONS') return OPTIONS();
+    return POST(req);
+  }
+
+  // Node.js IncomingMessage / ServerResponse
+  for (const [key, value] of Object.entries(CORS_HEADERS)) {
+    res.setHeader(key, value);
+  }
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -50,10 +130,10 @@ export default async function handler(req: any, res: any) {
       req.socket?.remoteAddress ||
       'client';
 
-    const result = await sendEmail({
-      ...body,
-      clientIp: Array.isArray(clientIp) ? clientIp[0] : clientIp,
-    });
+    const result = await processSendRequest(
+      body,
+      Array.isArray(clientIp) ? clientIp[0] : clientIp
+    );
 
     if (!result.success && !result.duplicatePrevented) {
       return res.status(400).json({

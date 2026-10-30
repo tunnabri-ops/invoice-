@@ -1,9 +1,47 @@
 import { getVerifiedDomains } from './_emailService';
 
-export default async function handler(req: any, res: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+export async function OPTIONS() {
+  return new Response(null, { status: 200, headers: CORS_HEADERS });
+}
+
+export async function GET() {
+  try {
+    const result = await getVerifiedDomains();
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        domains: result.domains,
+        isResendConfigured: result.isResendConfigured,
+        resendError: result.resendError,
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } }
+    );
+  } catch (error: any) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: error?.message || 'Internal Server Error retrieving domains',
+      }),
+      { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } }
+    );
+  }
+}
+
+export default async function handler(req: any, res?: any) {
+  if (!res || typeof res.setHeader !== 'function') {
+    if (req.method === 'OPTIONS') return OPTIONS();
+    return GET();
+  }
+
+  for (const [key, value] of Object.entries(CORS_HEADERS)) {
+    res.setHeader(key, value);
+  }
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
